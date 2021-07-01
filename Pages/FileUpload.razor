@@ -1,0 +1,174 @@
+﻿@page "/fileupload"
+@attribute [Authorize(Policy = "RequireAdminRole")]
+
+@using DocumentStore.Data
+@using DocumentStore.Enums
+@using DocumentStore.Models
+@using DocumentStore.Utilities
+@using Serilog
+@using System.Diagnostics
+@using System.IO
+@inject IJSRuntime js
+@inject FileStoreService FileStoreService
+
+<h1>Upload New File</h1>
+
+@if (isLoading)
+{
+    @*Loading Spinner*@
+    <div id="overlay">
+        <div class="d-flex flex-column align-items-center justify-content-center">
+            <div class="row">
+                <div class="spinner-border text-warning" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+            </div>
+            <div class="row">
+                <strong>@loadingText</strong>
+            </div>
+        </div>
+    </div>
+}
+
+<EditForm Model="@fileDescription" OnValidSubmit="@UploadFile" class="was-validated mt-4">
+    <fieldset>
+        <div class="mb-3">
+            <div class="input-group">
+                <div class="input-group-prepend">
+                    <label class="input-group-text" for="section">Section</label>
+                </div>
+                <InputSelect name="section" class="custom-select" id="section" @bind-Value="sectionName" required style="border-top-right-radius:.25rem; border-bottom-right-radius:.25rem">
+                    <option value="">Select</option>
+                    @foreach (string name in Enum.GetNames(typeof(Sections)))
+                    {
+                        <option value="@name">@name</option>
+                    }
+                </InputSelect>
+                <div class="invalid-feedback">Please select a Section.</div>
+            </div>
+        </div>
+        <div class="mb-3">
+            <div class="input-group">
+                <div class="input-group-prepend">
+                    <label class="input-group-text" for="description">Description</label>
+                </div>
+                <InputTextArea rows="3" class="form-control" name="description" id="description" @bind-Value="fileDescription.Description" placeholder="Enter a short description (optional)"></InputTextArea>
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="custom-file">
+                <InputFile OnChange="@OnInputFileChange" class="custom-file-input" id="fileupload" required />
+                <label for="fileupload" class="custom-file-label">@fileUploadLabel</label>
+                <div class="invalid-feedback">Please choose a file.</div>
+            </div>
+        </div>
+        <button type="submit" value="Upload" id="uploadButton" class="btn btn-primary">Upload</button>
+    </fieldset>
+</EditForm>
+
+@code {
+    private FileDescription fileDescription = new FileDescription();
+    private IBrowserFile uploadFile;
+    private string fileUploadLabel = "Choose file (max 5 MB)";
+    private string sectionName;
+    private bool isLoading = false;
+    private string loadingText = "";
+
+    private void OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        uploadFile = e.File;
+        fileDescription.FileName = e.File.Name;
+        fileUploadLabel = e.File.Name;
+    }
+
+    public async Task UploadFile()
+    {
+        string fileName = uploadFile.Name;
+        string userNotificationTitle = "Unable to Upload";
+        string userNotificationMessage = "Please try again or contact I.T. Support.";
+        string userNotificationIcon = "error";
+
+        isLoading = true;
+
+        fileDescription.SectionId = (Sections)Enum.Parse(typeof(Sections), sectionName);
+
+        try
+        {
+            loadingText = "Validating and uploading file";
+
+            // Upload to filetable using extension method SaveAsAsync() in FormFileExtensions.cs.
+            var fileVerificationResult = await uploadFile.SaveAsAsync(fileName, FileMode.CreateNew);
+
+            // Check passed and file saved.
+            if (fileVerificationResult == FileVerificationResult.Passed)
+            {
+                // Get the details from the record inserted when the file was copied to the filetable directory.
+                FileStore file = await FileStoreService.GetFileByNameAsync(fileName);
+
+                // Use the above details to set the file description stream id (foreign key that references the FileRepository table).
+                fileDescription.StreamId = file.StreamId;
+
+                // Add the file description to the relevant table.
+                await FileStoreService.InsertFileDescriptionAsync(fileDescription);
+
+                userNotificationTitle = "Upload Sucessful!";
+                userNotificationMessage = String.Concat(@"""", fileName, @""" was uploaded successfully.");
+                userNotificationIcon = "success";
+            }
+            // Check failed.
+            else if (fileVerificationResult == FileVerificationResult.FileNotFound)
+            {
+                userNotificationMessage = "Please choose a file to be uploaded.";
+            }
+            else if (fileVerificationResult == FileVerificationResult.TypeCheckFailed)
+            {
+                userNotificationMessage = "The file type is not an accepted type:\n .doc .docx .pdf .ppt .pptx .png .jpg .jpeg .xls .xlsx\n\nIf your file extension is on this list please contact I.T. Support.";
+            }
+            else if (fileVerificationResult == FileVerificationResult.VirusScanFailed)
+            {
+                userNotificationMessage = "The selected file has failed the virus scan.\nPlease upload a different file.";
+            }
+            else if (fileVerificationResult == FileVerificationResult.InvalidCharacters)
+            {
+                userNotificationMessage = String.Concat("Your file name contains one or more of the following invalid characters ", String.Join(" ", Path.GetInvalidFileNameChars()));
+            }
+            else if (fileVerificationResult == FileVerificationResult.ReservedWords)
+            {
+                userNotificationMessage = String.Concat("Your file name contains one or more of the following reserved words: ", String.Join(", ", ReservedWords.WordList));
+            }
+            else
+            {
+                userNotificationMessage = String.Concat("The file type check and virus scan could not be completed.\nPlease try again or contact I.T. Support.");
+            }
+        }
+        catch (IOException e)
+        {
+            userNotificationMessage = "Please ensure that your file name is unique (i.e. there is no other file on this site with this name) and your file does not exceed 5MB.\nIf it fulfills both conditions and you still get this error, please contact I.T. Support.";
+            Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+        }
+        catch (ArgumentNullException e)
+        {
+            userNotificationMessage = "The file chosen is empty.";
+            Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+        }
+        catch (Exception e)
+        {
+            Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+        }
+        finally
+        {
+            string tempFilePath = Path.Combine(@"D:\Fernando\Documents", fileName);
+
+            // Delete temp file, if it still exists.
+            if (File.Exists(tempFilePath))
+            {
+                File.Delete(tempFilePath);
+            }
+
+            // Notify user of result.
+            await js.InvokeAsync<object>("swal", userNotificationTitle, userNotificationMessage, userNotificationIcon);
+
+            isLoading = false;
+        }
+    }
+}

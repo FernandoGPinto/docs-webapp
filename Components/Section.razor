@@ -1,0 +1,136 @@
+﻿@using DocumentStore.Data
+@using DocumentStore.Enums
+@using DocumentStore.Models
+@using DocumentStore.Utilities
+@using Serilog
+@inject IJSRuntime js
+@inject FileStoreService FileStoreService
+
+@if (FileDescriptionsShort == null || isLoading)
+{
+    @*Loading Spinner*@
+    <div id="overlay">
+        <div class="spinner-border text-warning" role="status">
+            <span class="sr-only">Loading...</span>
+        </div>
+    </div>
+}
+else
+{
+    <div class="overflow-panel">
+        <table class="table mt-4">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th style="width: 290px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var fileDescriptionShort in FileDescriptionsShort)
+                {
+                    <tr>
+                        <!-- Set the path for the relevant icon based on the file extension -->
+                        @{string icon = "/img/" + fileDescriptionShort.FileName.Split(".")[^1] + ".png";}
+
+                        <td style="vertical-align:middle"><img src=@icon width="25" height="32" /></td>
+                        <td style="vertical-align:middle">@fileDescriptionShort.FileName</td>
+                        <td style="vertical-align:middle">@fileDescriptionShort.Description</td>
+                        <td style="vertical-align: middle; width: 290px">
+                            <div class="d-flex">
+                                <button class="btn btn-primary mr-1" @onclick="() => DownloadFile(fileDescriptionShort.StreamId, fileDescriptionShort.FileName)">Download</button>
+                                <AuthorizeView Policy="RequireAdminRole">
+                                    <a class="btn btn-info mr-1" href="fileupdate/@fileDescriptionShort.StreamId">Update</a>
+                                    <button class="btn btn-danger" @onclick="() => DeleteFile(fileDescriptionShort.StreamId, fileDescriptionShort.FileName)">Delete</button>
+                                </AuthorizeView>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public Sections SectionName { get; set; }
+
+    private List<FileDescriptionShort> FileDescriptionsShort;
+
+    private bool isLoading = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        FileDescriptionsShort = await FileStoreService.GetFileDescriptionsAsync(SectionName);
+    }
+
+    private async Task DownloadFile(Guid streamId, string fileName)
+    {
+        isLoading = true;
+
+        try
+        {
+            // Get file from filetable.
+            var file = await FileStoreService.GetFileAsync(streamId);
+
+            isLoading = false;
+
+            // Save file on client.
+            await FileUtil.SaveAs(js, fileName, file.FileStream);
+        }
+        catch (Exception e)
+        {
+            isLoading = false;
+
+            await js.InvokeAsync<object>("swal", "Unable to Download File", "Please try again or contact I.T. support.", "error");
+            Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+        }
+    }
+
+    [Authorize(Policy = "RequireAdminRole")]
+    private async Task DeleteFile(Guid streamId, string fileName)
+    {
+        // Confirm whether user wants to delete file.
+        var confirmed = await js.InvokeAsync<object>("swalNotification", "Are you sure?", String.Concat(@"You are about to delete """, fileName, @"""."), "warning", true, true);
+
+        if (confirmed is not null && confirmed.ToString() == "True")
+        {
+            string userNotificationTitle = "Unable to Delete File";
+            string userNotificationMessage = "Please try again or contact I.T. Support.";
+            string userNotificationIcon = "error";
+
+            isLoading = true;
+
+            try
+            {
+                // Delete file from filetable.
+                var result = await FileStoreService.DeleteFileAsync(streamId);
+                if (result > 0)
+                {
+                    // Remove from list displayed to user.
+                    var item = FileDescriptionsShort.Where(x => x.StreamId == streamId).SingleOrDefault();
+                    FileDescriptionsShort.Remove(item);
+
+                    StateHasChanged();
+
+                    userNotificationTitle = "File Deleted";
+                    userNotificationMessage = String.Concat(@"""", fileName, @""" has been deleted.");
+                    userNotificationIcon = "info";
+                }
+            }
+            catch (Exception e)
+            {
+                Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+            }
+            finally
+            {
+                isLoading = false;
+
+                // Notify user of result.
+                await js.InvokeAsync<object>("swal", userNotificationTitle, userNotificationMessage, userNotificationIcon);
+            }
+        }
+    }
+}
