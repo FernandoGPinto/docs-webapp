@@ -144,16 +144,16 @@
         catch (IOException e)
         {
             userNotificationMessage = "Please ensure that your file name is unique (i.e. there is no other file on this site with this name) and your file does not exceed 5MB.\nIf it fulfills both conditions and you still get this error, please contact I.T. Support.";
-            Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+            Log.Error(e, e.Message);
         }
         catch (ArgumentNullException e)
         {
             userNotificationMessage = "The file chosen is empty.";
-            Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+            Log.Error(e, e.Message);
         }
         catch (Exception e)
         {
-            Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+            Log.Error(e, e.Message);
         }
         finally
         {
