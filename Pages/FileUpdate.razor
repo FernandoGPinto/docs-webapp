@@ -153,16 +153,16 @@
         catch (IOException e)
         {
             userNotificationMessage = "Please ensure that your file does not exceed 5MB.\nIf it is under the limit and you still get this erros, please contact I.T. Support.";
-            Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+            Log.Error(e, e.Message);
         }
         catch (ArgumentNullException e)
         {
             userNotificationMessage = "The file chosen is empty.";
-            Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+            Log.Error(e, e.Message);
         }
         catch (Exception e)
         {
-            Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+            Log.Error(e, e.Message);
         }
         finally
         {
