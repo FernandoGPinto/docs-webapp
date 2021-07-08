@@ -85,7 +85,7 @@ else
             isLoading = false;
 
             await js.InvokeAsync<object>("swal", "Unable to Download File", "Please try again or contact I.T. support.", "error");
-            Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+            Log.Error(e, e.Message);
         }
     }
 
@@ -122,7 +122,7 @@ else
             }
             catch (Exception e)
             {
-                Log.Error(String.Concat(e.Message, "\n", e.StackTrace, "\n", e.InnerException));
+                Log.Error(e, e.Message);
             }
             finally
             {
